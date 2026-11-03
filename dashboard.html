@@ -56,6 +56,8 @@ details > summary { cursor: pointer; }
 .e-tool.failed { border-color: var(--err); background: var(--err-bg); }
 .e-tool.failed > .th, .e-tool.failed > .th > .lab { color: var(--err); }
 .e-tool.failed:not(.open) > .tb { display: none; }
+.e-sys { border: 1px solid var(--sys); border-left-width: 4px; border-radius: 4px; background: var(--sys-bg); padding: 3px 8px; }
+.e-sys > summary > .lab { color: var(--sys); }
 .e-sub, .e-side { border-left: 4px solid var(--sub); background: var(--sub-bg); padding: 4px 10px; border-radius: 4px; }
 .e-side { border-color: var(--side); background: var(--side-bg); }
 .e-sub > summary > .lab { color: var(--sub); }
@@ -69,7 +71,7 @@ details > summary { cursor: pointer; }
 .hidden { display: none !important; }
 
 body.no-usage .usage, body.no-raw .rawbtn, body.no-raw .rawbox, body.no-raw .e-raw, body.no-search .find { display: none; }
-.pane.hide-you .e-you, .pane.hide-model .e-model, .pane.hide-tool .e-tool, .pane.hide-sub .e-sub,
+.pane.hide-you .e-you, .pane.hide-sys .e-sys, .pane.hide-model .e-model, .pane.hide-tool .e-tool, .pane.hide-sub .e-sub,
 .pane.hide-side .e-side, .pane.hide-err .e-err { display: none; }
 </style>
 </head>
@@ -84,7 +86,7 @@ const time = ts => new Date(ts * 1000).toTimeString().slice(0, 8);
 const nlines = s => s.split('\n').length;
 const firstLine = s => (s.split('\n').find(l => l.trim()) || '').trim();
 const WRAPPED = /^\s*<([a-zA-Z][\w-]*)[^>]*>[\s\S]*<\/\1>\s*$/;
-const TYPES = [['you', 'your prompts'], ['model', 'replies'], ['tool', 'tools'], ['sub', 'subagents'], ['side', 'side calls'], ['err', 'errors']];
+const TYPES = [['you', 'your prompts'], ['sys', 'harness messages'], ['model', 'replies'], ['tool', 'tools'], ['sub', 'subagents'], ['side', 'side calls'], ['err', 'errors']];
 const MAIN_ARG = ['file_path', 'command', 'pattern', 'url', 'query', 'description', 'path', 'skill', 'prompt'];
 
 // ---- markdown ----
@@ -139,12 +141,13 @@ for (const [k, text] of [['usage', 'usage'], ['raw', 'raw view'], ['search', 'se
 }
 
 // ---- global state: the event log is the source of truth; every pane is a replay of it ----
-const log = [], chats = {}, models = {}, live = {}, reqRoot = {};
+const log = [], chats = {}, titles = {}, models = {}, live = {}, reqRoot = {};
 let panes = [], active = null;
 const tabsEl = document.getElementById('tabs'), panesEl = document.getElementById('panes');
 
 function track(ev) {
   if (ev.t === 'chat') chats[ev.id] = ev;
+  else if (ev.t === 'title') titles[ev.chat] = ev.title;  // may precede its chat event
   else if (ev.t === 'req' && !ev.other) {
     reqRoot[ev.id] = ev.root; live[ev.root] = (live[ev.root] || 0) + 1;
     if (ev.chat === ev.root) models[ev.root] = ev.model;
@@ -158,7 +161,7 @@ function label(id) {
   if (!c) return '';
   if (c.parent) return `${c.kind === 'sub' ? 'SUBAGENT' : 'SIDE CALL'} · ${c.label}`;
   const several = Object.values(chats).some(d => !d.parent && d.n === c.n && d.id !== id);
-  return `claude #${c.n}${several ? ' · chat ' + c.m : ''}${models[id] ? ' · ' + models[id] : ''}`;
+  return `${titles[id] || 'claude #' + c.n}${several ? ' · chat ' + c.m : ''}${models[id] ? ' · ' + models[id] : ''}`;
 }
 function renderTabs() {
   tabsEl.replaceChildren(...Object.values(chats).filter(c => !c.parent).map(c => {
@@ -299,6 +302,13 @@ class View {
     if (m.role === 'assistant') {  // history the dashboard did not see streamed
       const r = new Reply(this, { chat });
       blocks.forEach(b => r.start(b)?.stop?.());
+      return;
+    }
+    if (m.role === 'system') {  // hook output, environment listings: harness-injected, not typed by the user
+      const body = blocks.map(b => b.text ?? JSON.stringify(b)).join('\n\n'), sum = firstLine(body).slice(0, 100);
+      const d = row(sum, body, 'e e-sys');
+      d.firstChild.firstChild.replaceWith($('span', 'lab', 'HARNESS'), ' · ' + sum + ' ');
+      this.body[chat].append(d);
       return;
     }
     const rest = [];
