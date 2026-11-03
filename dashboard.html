@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <title>agent ↔ model</title>
 <style>
-:root { color-scheme: light; --bg: #fafafa; --fg: #1f2937; --panel: #fff; --bd: #ddd; --bd2: #eee; --bd3: #ccc; --dim: #9ca3af; --code: #f3f4f6; --sumfg: #374151; --ok: #16a34a; --onacc: #fff;
-  --mut: #6b7280; --you: #1d4ed8; --model: #0f766e; --tool: #b45309; --sub: #7c3aed; --side: #0e7490; --err: #dc2626; --sys: #475569;
-  --you-bg: #eff6ff; --model-bg: #f0fdfa; --tool-bg: #fffbeb; --sub-bg: #f5f3ff; --side-bg: #ecfeff; --err-bg: #fef2f2; --sys-bg: #f1f5f9; }
+:root { color-scheme: light; --bg: #fafafa; --fg: #1f2937; --panel: #fff; --bd: #ddd; --bd2: #eee; --bd3: #ccc; --dim: #9ca3af; --code: #f3f4f6; --sumfg: #374151; --ok: #166534; --onacc: #fff;
+  --mut: #566070; --you: #1d4ed8; --model: #0f766e; --tool: #b45309; --sub: #7c3aed; --side: #0e7490; --err: #dc2626; --sys: #475569;
+  --you-bg: #e4eeff; --model-bg: #dcf5e4; --tool-bg: #fffbeb; --sub-bg: #f5f3ff; --side-bg: #ecfeff; --err-bg: #fef2f2; --sys-bg: #f1f5f9; }
 body:not(.no-dark) { color-scheme: dark; --bg: #0f1419; --fg: #e5e7eb; --panel: #171c23; --bd: #2d3540; --bd2: #252c36; --bd3: #3b4552; --dim: #6b7280; --code: #1f2630; --sumfg: #cbd5e1; --ok: #4ade80; --onacc: #0f1419;
-  --mut: #9ca3af; --you: #60a5fa; --model: #2dd4bf; --tool: #fbbf24; --sub: #a78bfa; --side: #22d3ee; --err: #f87171; --sys: #94a3b8;
-  --you-bg: #14213d; --model-bg: #0e2b29; --tool-bg: #2b2208; --sub-bg: #241b3d; --side-bg: #0b2a31; --err-bg: #331617; --sys-bg: #1d2530; }
+  --mut: #a3a9b5; --you: #6aa8fb; --model: #34d399; --tool: #fbbf24; --sub: #a78bfa; --side: #22d3ee; --err: #f87171; --sys: #94a3b8;
+  --you-bg: #1a2f66; --model-bg: #0d4630; --tool-bg: #2b2208; --sub-bg: #241b3d; --side-bg: #0b2a31; --err-bg: #331617; --sys-bg: #1d2530; }
 body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); height: 100vh; display: flex; flex-direction: column; }
 #bar { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--bd); background: var(--panel); flex-wrap: wrap; }
 #tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
