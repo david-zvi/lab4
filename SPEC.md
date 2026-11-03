@@ -64,7 +64,7 @@ Every request resends the full history, so grouping uses history continuity, not
 
 ### Tabs and panes
 
-- One **tab per chat**. Label: `claude #N` (N = order in which session ids first appeared), plus `· chat M` when one instance has several chats (after `/clear`), plus the model name. A dot marks a chat that is streaming right now.
+- One **tab per chat**. Label: the chat name Claude Code generates for the session once it is known, until then `claude #N` (N = order in which session ids first appeared), plus `· chat M` when one instance has several chats (after `/clear`), plus the model name. A dot marks a chat that is streaming right now.
 - Any tab can be opened **side by side** with others (split into 2 or more columns, each pane independent).
 - **Open beside**: any expandable entry longer than **10 lines** (subagents, side calls, injected blocks, system prompt, tools, thinking, long tool results) has an "open beside" button that shows it in a new pane, formatted like a full chat.
 
@@ -91,14 +91,15 @@ The file contains "This is a small file".
 ```
 
 - **Your prompt**: right-aligned bubble with its own color. Shows only the text you typed (the last plain-text block not wrapped in `<system-reminder>` or similar harness tags). Harness-injected blocks in the same message appear as **collapsed rows inside the bubble**, one per block, labeled by type.
-- **Model reply**: left-aligned, rendered markdown, no bubble. Header: timestamp and `req #`. Every reply carries collapsed rows for the **system prompt** and **tools** of the request that produced it, and a collapsed **thinking** row that expands to the raw block exactly as sent (`thinking` text, even if empty, plus `signature`).
+- **Harness message**: text Claude Code sends as a message of its own rather than something you typed (e.g. SessionStart hook output, the environment and available-tools listing). Never shown as your prompt: one entry labeled `HARNESS`, **collapsed by default**, in its own color distinct from your prompt, styled as a card like tool calls; over 10 lines, "open beside".
+- **Model reply**: left-aligned bubble, rendered markdown, in its own color distinct from your prompt's bubble. Header: timestamp and `req #`. Every reply carries collapsed rows for the **system prompt** and **tools** of the request that produced it, and a collapsed **thinking** row that expands to the raw block exactly as sent (`thinking` text, even if empty, plus `signature`).
 - **Tool call + result**: **one card**: the call (tool name, short summary of the main argument in the header, full arguments in the body) with its result directly below, matched by `tool_use_id`. Until the result arrives, the card shows `waiting for result…`. Tool results longer than 10 lines are collapsed to the first 10 lines with "show all" and "open beside".
 - **Subagent / side call**: entry inside the card or timeline position that triggered it, labeled `SUBAGENT · <description>` or `SIDE CALL · <purpose>` with a one-line summary of the result. Full color, **not dimmed**. Expands in place to the full exchange; over 10 lines, "open beside".
 - **API error**: red header line `API ERROR · 529 Overloaded · HH:MM:SS · req #N (retry k)`, collapsed; click to show the error body.
 - **Failed tool result** (`is_error: true`): the tool card's header turns red and says `FAILED`; the card is collapsed to the header, and a click shows the call and error text.
 - **Dividers**: `/compact` points, as a full-width line.
 
-Each type has a distinct color **and** a text label (`YOU`, `MODEL`, `TOOL`, `SUBAGENT`, `SIDE CALL`, `API ERROR`), so the types stay distinguishable without color too.
+Each type has a distinct color **and** a text label (`YOU`, `HARNESS`, `MODEL`, `TOOL`, `SUBAGENT`, `SIDE CALL`, `API ERROR`), so the types stay distinguishable without color too.
 
 ### Live behavior
 
@@ -114,7 +115,8 @@ Small built-in renderer (~60 lines of JS): fenced code blocks, inline code, head
 
 - **Usage per reply**: model, input / output tokens, cache read / write, duration (from `message_start` and `message_delta`).
 - **Raw view per request**: a `raw` toggle on each model reply showing the exact request JSON and SSE stream (auth masked).
-- **Search / filter**: search box per pane, plus type filters (your prompts, replies, tools, subagents, side calls, errors).
+- **Search / filter**: search box per pane, plus type filters (your prompts, harness messages, replies, tools, subagents, side calls, errors).
+- **Dark mode**: dark color theme for the whole page; every type stays distinct and readable.
 
 ## Security
 
