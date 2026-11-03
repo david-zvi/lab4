@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agent ↔ model</title>
+<style>
+:root { --you: #1d4ed8; --model: #0f766e; --tool: #b45309; --sub: #7c3aed; --side: #0e7490; --err: #dc2626; --mut: #6b7280; }
+body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: #1f2937; background: #fafafa; height: 100vh; display: flex; flex-direction: column; }
+#bar { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid #ddd; background: #fff; flex-wrap: wrap; }
+#tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+#settings { display: flex; gap: 10px; color: var(--mut); font-size: 12px; }
+.tab { border: 1px solid #ccc; border-radius: 6px; padding: 2px 4px 2px 8px; cursor: pointer; background: #f3f4f6; }
+.tab.on { background: #fff; border-color: var(--model); font-weight: 600; }
+.dot { color: #16a34a; }
+button { font: inherit; font-size: 11px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #fff; padding: 0 5px; margin-left: 4px; }
+#panes { flex: 1; display: flex; min-height: 0; }
+#empty { margin: auto; color: var(--mut); }
+.pane { flex: 1; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid #ddd; position: relative; }
+.ph { display: flex; gap: 8px; align-items: center; padding: 4px 8px; background: #fff; border-bottom: 1px solid #eee; flex-wrap: wrap; font-size: 12px; }
+.ph .close { margin-left: auto; }
+.find { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.list { flex: 1; overflow: auto; padding: 8px 14px; }
+.newbtn { position: absolute; bottom: 14px; right: 24px; display: none; padding: 3px 10px; font-size: 12px; background: var(--model); color: #fff; border: 0; }
+.e { margin: 10px 0; }
+.lab { font-weight: 700; font-size: 11px; letter-spacing: .06em; }
+pre { white-space: pre-wrap; word-break: break-word; margin: 2px 0; font: 12px/1.4 ui-monospace, monospace; }
+details > summary { cursor: pointer; }
+.row { color: var(--mut); font-size: 12px; margin: 1px 0; }
+.row pre { color: #1f2937; background: #f3f4f6; padding: 4px 6px; max-height: 60vh; overflow: auto; }
+.md p, .md ul, .md ol, .md pre, .md table { margin: 4px 0; }
+.md pre, .md code { background: #f3f4f6; border-radius: 3px; }
+.md pre { padding: 6px; }
+.md table { border-collapse: collapse; }
+.md td, .md th { border: 1px solid #ccc; padding: 2px 6px; }
+.md h1, .md h2, .md h3, .md h4 { margin: 8px 0 4px; font-size: 15px; }
+
+.e-you { margin-left: auto; width: fit-content; max-width: 80%; border: 1px solid var(--you); background: #eff6ff; border-radius: 12px; padding: 6px 12px; }
+.e-you > .lab { color: var(--you); }
+.e-model .hd { display: flex; gap: 8px; align-items: baseline; }
+.e-model .hd > .lab { color: var(--model); }
+.meta { margin-left: auto; color: var(--mut); font-size: 12px; }
+.streaming { color: #16a34a; font-size: 12px; }
+.usage { color: var(--mut); font-size: 12px; }
+.e-tool { border: 1px solid var(--tool); border-left-width: 4px; border-radius: 4px; background: #fffbeb; }
+.e-tool > .th { padding: 3px 8px; cursor: pointer; }
+.e-tool > .th > .lab { color: var(--tool); }
+.tsum { color: var(--mut); }
+.e-tool > .tb { padding: 0 8px 6px; }
+.res { margin-top: 4px; }
+.e-tool.failed { border-color: var(--err); background: #fef2f2; }
+.e-tool.failed > .th, .e-tool.failed > .th > .lab { color: var(--err); }
+.e-tool.failed:not(.open) > .tb { display: none; }
+.e-sub, .e-side { border-left: 4px solid var(--sub); background: #f5f3ff; padding: 4px 10px; border-radius: 4px; }
+.e-side { border-color: var(--side); background: #ecfeff; }
+.e-sub > summary > .lab { color: var(--sub); }
+.e-side > summary > .lab { color: var(--side); }
+.sum { color: #374151; }
+.nbody { border-top: 1px dashed #ccc; margin-top: 4px; }
+.e-err > summary { color: var(--err); }
+.e-err > summary > .lab, .errline { color: var(--err); }
+.e-div { text-align: center; color: var(--mut); font-size: 12px; border-top: 1px dashed #9ca3af; padding-top: 2px; }
+.e-raw > summary { color: var(--mut); font-size: 12px; }
+.hidden { display: none !important; }
+
+body.no-usage .usage, body.no-raw .rawbtn, body.no-raw .rawbox, body.no-raw .e-raw, body.no-search .find { display: none; }
+.pane.hide-you .e-you, .pane.hide-model .e-model, .pane.hide-tool .e-tool, .pane.hide-sub .e-sub,
+.pane.hide-side .e-side, .pane.hide-err .e-err { display: none; }
+</style>
+</head>
+<body>
+<div id="bar"><span id="tabs"></span><span id="settings"></span></div>
+<div id="panes"><p id="empty">Waiting for traffic… run <code>ANTHROPIC_BASE_URL=http://localhost:8041 claude</code></p></div>
+<script>
+'use strict';
+// Untrusted traffic only ever reaches the DOM via textContent, or via md() which escapes first.
+const $ = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const time = ts => new Date(ts * 1000).toTimeString().slice(0, 8);
+const nlines = s => s.split('\n').length;
+const firstLine = s => (s.split('\n').find(l => l.trim()) || '').trim();
+const WRAPPED = /^\s*<([a-zA-Z][\w-]*)[^>]*>[\s\S]*<\/\1>\s*$/;
+const TYPES = [['you', 'your prompts'], ['model', 'replies'], ['tool', 'tools'], ['sub', 'subagents'], ['side', 'side calls'], ['err', 'errors']];
+const MAIN_ARG = ['file_path', 'command', 'pattern', 'url', 'query', 'description', 'path', 'skill', 'prompt'];
+
+// ---- markdown ----
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function inline(s) {
+  const keep = [], stash = h => `\u0000${keep.push(h) - 1}\u0000`, unstash = t => t.replace(/\u0000(\d+)\u0000/g, (_, i) => keep[i]);
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => stash(`<code>${c}</code>`))
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, t, u) => stash(`<a href="${u}" target="_blank" rel="noreferrer">${t}</a>`))
+    .replace(/\*\*(?=\S)(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[^\w*])([*_])(?=\S)(.+?)\2(?!\w)/g, '$1<i>$3</i>');
+  return unstash(unstash(s));
+}
+function md(src) {
+  const L = esc(src).split('\n'), out = [];
+  const isList = l => /^\s*([-*+]|\d+[.)])\s+/.test(l), isRow = l => /^\s*\|.*\|\s*$/.test(l);
+  const isBlock = l => /^\s*```|^#{1,6}\s/.test(l) || isList(l) || isRow(l);
+  const cells = (l, tag) => l.trim().replace(/^\||\|$/g, '').split('|').map(c => `<${tag}>${inline(c.trim())}</${tag}>`).join('');
+  for (let i = 0; i < L.length;) {
+    const l = L[i];
+    if (/^\s*```/.test(l)) {
+      const buf = [];
+      while (++i < L.length && !/^\s*```/.test(L[i])) buf.push(L[i]);
+      out.push(`<pre><code>${buf.join('\n')}</code></pre>`); i++;
+    } else if (/^#{1,6}\s/.test(l)) {
+      const n = l.match(/^#+/)[0].length;
+      out.push(`<h${n}>${inline(l.slice(n).trim())}</h${n}>`); i++;
+    } else if (isRow(l) && /^\s*\|?\s*:?-{2,}/.test(L[i + 1] || '')) {
+      let h = `<table><tr>${cells(l, 'th')}</tr>`;
+      for (i += 2; i < L.length && isRow(L[i]); i++) h += `<tr>${cells(L[i], 'td')}</tr>`;
+      out.push(h + '</table>');
+    } else if (isList(l)) {
+      const ordered = /^\s*\d/.test(l), tag = ordered ? 'ol' : 'ul'; let h = '';
+      for (; i < L.length && isList(L[i]) && /^\s*\d/.test(L[i]) === ordered; i++) h += `<li>${inline(L[i].replace(/^\s*([-*+]|\d+[.)])\s+/, ''))}</li>`;
+      out.push(`<${tag}>${h}</${tag}>`);
+    } else if (!l.trim()) i++;
+    else {
+      const buf = [inline(l)];
+      for (i++; i < L.length && L[i].trim() && !isBlock(L[i]); i++) buf.push(inline(L[i]));
+      out.push(`<p>${buf.join('<br>')}</p>`);
+    }
+  }
+  return out.join('');
+}
+
+// ---- settings ----
+for (const [k, text] of [['usage', 'usage'], ['raw', 'raw view'], ['search', 'search / filter']]) {
+  const cb = $('input'), lab = $('label');
+  cb.type = 'checkbox'; cb.checked = localStorage.getItem('dash.' + k) !== 'off';
+  const set = () => { document.body.classList.toggle('no-' + k, !cb.checked); localStorage.setItem('dash.' + k, cb.checked ? 'on' : 'off'); };
+  cb.onchange = set; set();
+  lab.append(cb, ' ' + text); document.getElementById('settings').append(lab);
+}
+
+// ---- global state: the event log is the source of truth; every pane is a replay of it ----
+const log = [], chats = {}, models = {}, live = {}, reqRoot = {};
+let panes = [], active = null;
+const tabsEl = document.getElementById('tabs'), panesEl = document.getElementById('panes');
+
+function track(ev) {
+  if (ev.t === 'chat') chats[ev.id] = ev;
+  else if (ev.t === 'req' && !ev.other) {
+    reqRoot[ev.id] = ev.root; live[ev.root] = (live[ev.root] || 0) + 1;
+    if (ev.chat === ev.root) models[ev.root] = ev.model;
+  } else if (ev.t === 'done' && ev.req in reqRoot) live[reqRoot[ev.req]]--;
+  else return;
+  if (ev.t === 'chat' && !ev.parent && !panes.length) show(ev.id);
+  renderTabs();
+}
+function label(id) {
+  const c = chats[id];
+  if (!c) return '';
+  if (c.parent) return `${c.kind === 'sub' ? 'SUBAGENT' : 'SIDE CALL'} · ${c.label}`;
+  const several = Object.values(chats).some(d => !d.parent && d.n === c.n && d.id !== id);
+  return `claude #${c.n}${several ? ' · chat ' + c.m : ''}${models[id] ? ' · ' + models[id] : ''}`;
+}
+function renderTabs() {
+  tabsEl.replaceChildren(...Object.values(chats).filter(c => !c.parent).map(c => {
+    const t = $('span', 'tab' + (active && active.root === c.id ? ' on' : '')), b = $('button', '', '⧉');
+    if (live[c.id] > 0) t.append($('span', 'dot', '● '));
+    b.title = 'open beside';
+    b.onclick = e => { e.stopPropagation(); openPane(new View(c.id)); };
+    t.append(label(c.id), b);
+    t.onclick = () => show(c.id);
+    return t;
+  }));
+}
+function openPane(v, replacing) {
+  document.getElementById('empty')?.remove();
+  if (replacing) { replacing.el.replaceWith(v.el); panes[panes.indexOf(replacing)] = v; }
+  else { panesEl.append(v.el); panes.push(v); }
+  active = v; renderTabs();
+  v.list.scrollTop = v.list.scrollHeight;
+}
+const show = id => openPane(new View(id), panes.includes(active) ? active : null);
+function closePane(v) {
+  v.el.remove(); panes = panes.filter(p => p !== v);
+  if (active === v) active = panes.at(-1) || null;
+  renderTabs();
+}
+function besideBtn(make) {
+  const b = $('button', 'bes', 'open beside');
+  b.onclick = e => { e.preventDefault(); e.stopPropagation(); openPane(make()); };
+  return b;
+}
+const textPane = (title, text) => new View(null, title, $('pre', '', text));
+function row(text, body, cls = 'row') {
+  const d = $('details', cls), s = $('summary', '', text + ' ');
+  if (nlines(body) > 10) s.append(besideBtn(() => textPane(text, body)));
+  d.append(s);
+  d.addEventListener('toggle', () => { if (d.open && !d.querySelector('pre')) d.append($('pre', '', body)); });
+  return d;
+}
+function loadRaw(id, into) {
+  let pre = into.querySelector(':scope > pre');
+  if (!pre) into.append(pre = $('pre', '', 'loading…'));
+  fetch('/raw/' + id).then(r => r.json()).then(j => {
+    pre.textContent = JSON.stringify(j.request, null, 2) + '\n\n──── response ────\n' + j.response;
+  });
+}
+function injected(b) {
+  if (b.type !== 'text') return b.type;
+  const m = b.text.match(WRAPPED);
+  if (!m) return 'text';
+  const inner = b.text.trim(), body = inner.slice(inner.indexOf('>') + 1);
+  return `${m[1]}: ${/CLAUDE\.md/.test(body) ? 'CLAUDE.md' : firstLine(body.replace(/<[^>]*>/g, '')).slice(0, 60)}`;
+}
+
+// ---- one pane: a live view of one chat (with everything nested in it), or static text ----
+class View {
+  constructor(root, title, staticNode) {
+    this.root = root; this.static = !!staticNode;
+    this.threads = new Set([root]); this.body = {}; this.replies = {}; this.cards = {}; this.sum = {};
+    this.dirty = new Set(); this.follow = true; this.unseen = 0;
+    const el = this.el = $('div', 'pane'), ph = $('div', 'ph'), find = $('span', 'find'), x = $('button', 'close', '×');
+    this.title = $('b', '', title || label(root));
+    this.q = $('input'); this.q.placeholder = 'search'; this.q.oninput = () => this.filter();
+    find.append(this.q);
+    for (const [k, text] of TYPES) {
+      const cb = $('input'), lab = $('label');
+      cb.type = 'checkbox'; cb.checked = true;
+      cb.onchange = () => el.classList.toggle('hide-' + k, !cb.checked);
+      lab.append(cb, text); find.append(lab);
+    }
+    x.onclick = () => closePane(this);
+    ph.append(this.title, find, x);
+    this.list = this.body[root] = $('div', 'list');
+    this.newBtn = $('button', 'newbtn');
+    this.newBtn.onclick = () => { this.follow = true; this.list.scrollTop = this.list.scrollHeight; };
+    this.list.onscroll = () => {
+      this.follow = this.list.scrollTop + this.list.clientHeight >= this.list.scrollHeight - 40;
+      if (this.follow) { this.unseen = 0; this.newBtn.style.display = 'none'; }
+    };
+    el.append(ph, this.list, this.newBtn);
+    el.addEventListener('mousedown', () => { if (active !== this) { active = this; renderTabs(); } });
+    if (this.static) this.list.append(staticNode);
+    else for (const ev of log) this.apply(ev);
+  }
+  apply(ev) {
+    if (this.static) return;
+    const before = this.list.childElementCount;
+    this.handle(ev);
+    const added = this.list.childElementCount - before;
+    if (added > 0 && !this.follow) {
+      this.unseen += added;
+      this.newBtn.textContent = `↓ ${this.unseen} new`; this.newBtn.style.display = 'block';
+    }
+    this.schedule();
+  }
+  schedule() {  // batch markdown re-rendering and scrolling to one pass per frame
+    if (this.raf) return;
+    this.raf = requestAnimationFrame(() => {
+      this.raf = 0;
+      for (const b of this.dirty) b.el.innerHTML = md(b.text);
+      this.dirty.clear();
+      this.title.textContent = label(this.root);
+      if (this.q.value) this.filter();
+      if (this.follow) this.list.scrollTop = this.list.scrollHeight;
+    });
+  }
+  filter() {
+    const q = this.q.value.toLowerCase();
+    for (const e of this.list.children) e.classList.toggle('hidden', !!q && !e.textContent.toLowerCase().includes(q));
+  }
+  handle(ev) {
+    if (ev.t === 'chat') { if (ev.parent && this.threads.has(ev.parent.chat)) this.nest(ev); }
+    else if (ev.t === 'divider') { if (this.threads.has(ev.chat)) this.body[ev.chat].append($('div', 'e e-div', `── ${ev.text} · ${time(ev.ts)} ──`)); }
+    else if (ev.t === 'req') { if (this.threads.has(ev.chat)) this.request(ev); }
+    else if (this.replies[ev.req]) this.replies[ev.req][ev.t](ev);
+  }
+  nest(ev) {  // a subagent or side call, inside the tool card or timeline that triggered it
+    const d = $('details', 'e e-' + ev.kind), s = $('summary'), body = $('div', 'nbody');
+    s.append($('span', 'lab', ev.kind === 'sub' ? 'SUBAGENT' : 'SIDE CALL'), ` · ${ev.label} `,
+      this.sum[ev.id] = $('span', 'sum'), besideBtn(() => new View(ev.id)));
+    d.append(s, body);
+    this.threads.add(ev.id); this.body[ev.id] = body;
+    const card = ev.parent.tool && this.cards[ev.parent.tool];
+    (card ? card.nest : this.body[ev.parent.chat]).append(d);
+  }
+  request(ev) {
+    if (ev.other) {
+      const d = $('details', 'e e-raw');
+      d.append($('summary', '', `raw · ${ev.method} ${ev.path} · ${time(ev.ts)} · req #${ev.id}`));
+      d.addEventListener('toggle', () => d.open && loadRaw(ev.id, d));
+      this.body[ev.chat].append(d);
+      return;
+    }
+    for (const m of ev.msgs) this.message(m, ev.chat);
+    this.replies[ev.id] = new Reply(this, ev);
+  }
+  message(m, chat) {
+    const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content || [];
+    if (m.role === 'assistant') {  // history the dashboard did not see streamed
+      const r = new Reply(this, { chat });
+      blocks.forEach(b => r.start(b)?.stop?.());
+      return;
+    }
+    const rest = [];
+    for (const b of blocks) b.type === 'tool_result' ? this.cards[b.tool_use_id]?.result(b) : rest.push(b);
+    if (!rest.length) return;
+    let p = -1;  // your prompt: the last plain-text block not wrapped in a harness tag
+    rest.forEach((b, i) => { if (b.type === 'text' && !WRAPPED.test(b.text)) p = i; });
+    const el = $('div', 'e e-you');
+    el.append($('div', 'lab', 'YOU'));
+    if (p >= 0) { const t = $('div', 'md'); t.innerHTML = md(rest[p].text); el.append(t); }
+    rest.forEach((b, i) => {
+      if (i !== p) el.append(row(injected(b), b.type === 'text' ? b.text : b.type === 'image' ? '[image]' : JSON.stringify(b, null, 2)));
+    });
+    this.body[chat].append(el);
+  }
+}
+
+class Card {  // one tool call and its result
+  constructor(name) {
+    this.el = $('div', 'e e-tool');
+    const th = $('div', 'th'), tb = $('div', 'tb');
+    this.lab = $('span', 'lab', 'TOOL'); this.summ = $('span', 'tsum');
+    th.append(this.lab, ' ', $('b', '', name), ' ', this.summ);
+    th.onclick = () => this.el.classList.toggle('open');
+    this.call = $('pre'); this.res = $('div', 'res', 'waiting for result…'); this.nest = $('div');
+    tb.append($('span', 'lab', 'call:'), this.call, this.res, this.nest);
+    this.el.append(th, tb);
+  }
+  input(inp) {
+    const k = MAIN_ARG.find(k => typeof inp[k] === 'string') ?? Object.keys(inp).find(k => typeof inp[k] === 'string');
+    this.summ.textContent = k ? firstLine(inp[k]).slice(0, 80) : '';
+    this.call.textContent = Object.entries(inp).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join('\n');
+  }
+  result(b) {
+    const text = typeof b.content === 'string' ? b.content
+      : (b.content || []).map(c => c.type === 'text' ? c.text : `[${c.type}]`).join('\n');
+    const pre = $('pre', '', text);
+    this.res.replaceChildren($('span', 'lab', 'result:'), pre);
+    if (nlines(text) > 10) {
+      pre.textContent = text.split('\n').slice(0, 10).join('\n') + '\n…';
+      const all = $('button', '', 'show all');
+      all.onclick = () => { pre.textContent = text; all.remove(); };
+      this.res.append(all, besideBtn(() => textPane('result · ' + this.summ.textContent, text)));
+    }
+    if (b.is_error) { this.el.classList.add('failed'); this.lab.textContent = 'TOOL · FAILED'; }
+  }
+}
+
+class Reply {  // a model reply, built live from the SSE events of one request
+  constructor(v, ev) {
+    this.v = v; this.ev = ev; this.blocks = []; this.u = {};
+    this.el = $('div', 'e e-model'); this.body = $('div');
+    const hd = $('div', 'hd');
+    hd.append($('span', 'lab', 'MODEL'));
+    if (ev.id) {
+      const raw = $('button', 'rawbtn', 'raw'), box = $('div', 'rawbox');
+      box.hidden = true;
+      raw.onclick = () => { box.hidden = !box.hidden; if (!box.hidden) loadRaw(ev.id, box); };
+      hd.append($('span', 'meta', `${time(ev.ts)} · req #${ev.id}`), raw);
+      this.mark = $('div', 'streaming', 'streaming…'); this.usage = $('div', 'usage');
+      this.el.append(hd,
+        row(`system prompt (${ev.system.length} blocks)`, ev.system.join('\n\n──────────\n\n')),
+        row(`tools (${ev.tools.length})`, ev.tools.map(t => `${t.name} — ${t.description}`).join('\n')),
+        this.body, this.mark, this.usage, box);
+    } else this.el.append(hd, this.body);
+    v.body[ev.chat].append(this.el);
+  }
+  start(cb) {
+    const v = this.v;
+    if (cb.type === 'text') {
+      const b = { el: $('div', 'md'), text: cb.text || '', delta(d) { this.text += d.text || ''; v.dirty.add(this); } };
+      this.body.append(b.el); v.dirty.add(b);
+      return b;
+    }
+    if (cb.type === 'tool_use') {
+      const card = v.cards[cb.id] = new Card(cb.name);
+      card.input(cb.input || {});
+      v.body[this.ev.chat].append(card.el);
+      let json = '';
+      return {
+        delta(d) { json += d.partial_json || ''; card.call.textContent = json; },
+        stop() { try { if (json) card.input(JSON.parse(json)); } catch { /* keep the partial text */ } },
+      };
+    }
+    // thinking, redacted_thinking, anything else: the raw block exactly as sent
+    const raw = { ...cb }, d = $('details', 'row'), s = $('summary', '', cb.type.replace('_', ' ') + ' '), pre = $('pre');
+    const fill = () => { pre.textContent = JSON.stringify(raw, null, 2); };
+    d.append(s, pre); d.addEventListener('toggle', fill); this.body.append(d);
+    return {
+      delta(x) {
+        if (x.type === 'thinking_delta') raw.thinking = (raw.thinking || '') + x.thinking;
+        else if (x.type === 'signature_delta') raw.signature = (raw.signature || '') + x.signature;
+        if (d.open) fill();
+      },
+      stop() { fill(); if (nlines(pre.textContent) > 10) s.append(besideBtn(() => textPane(cb.type, pre.textContent))); },
+    };
+  }
+  sse({ d }) {
+    const b = this.blocks[d.index];
+    switch (d.type) {
+      case 'message_start': this.model = d.message.model; Object.assign(this.u, d.message.usage); break;
+      case 'content_block_start': this.blocks[d.index] = this.start(d.content_block); break;
+      case 'content_block_delta': b?.delta(d.delta); break;
+      case 'content_block_stop': b?.stop?.(); break;
+      case 'message_delta': Object.assign(this.u, d.usage); break;
+      case 'message_stop': this.mark.remove(); break;
+      case 'error': this.body.append($('div', 'errline', 'stream error: ' + JSON.stringify(d.error))); break;
+    }
+  }
+  done(ev) {
+    this.mark.remove();
+    if (ev.error != null) {
+      const d = $('details', 'e e-err'), s = $('summary');
+      s.append($('span', 'lab', 'API ERROR'), ` · ${ev.status ?? 'no response'} ${ev.reason || ''} · ${time(ev.ts)} · req #${this.ev.id}${this.ev.retry ? ` (retry ${this.ev.retry})` : ''}`);
+      d.append(s, $('pre', '', ev.error));
+      this.el.replaceWith(d);
+      return;
+    }
+    const u = this.u;
+    this.usage.textContent = `${this.model || this.ev.model} · in ${u.input_tokens ?? '?'} · cache r ${u.cache_read_input_tokens || 0} / w ${u.cache_creation_input_tokens || 0} · out ${u.output_tokens ?? '?'} · ${(ev.ts - this.ev.ts).toFixed(1)}s`;
+    const text = this.blocks.filter(b => b && 'text' in b).map(b => b.text).join('\n');
+    const sum = this.v.sum[this.ev.chat];
+    if (sum && text) sum.textContent = '— ' + firstLine(text).slice(0, 100);
+  }
+}
+
+// ---- live feed: the server replays its whole log first, then streams ----
+const es = new EventSource('/events');
+es.onmessage = e => {
+  const ev = JSON.parse(e.data), ps = [...panes];  // panes opened by track() replay the log themselves
+  log.push(ev);
+  track(ev);
+  for (const p of ps) try { p.apply(ev); } catch (err) { console.error(err); }
+};
+es.addEventListener('reset', () => location.reload());
+</script>
+</body>
+</html>
