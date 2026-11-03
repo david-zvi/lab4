@@ -53,9 +53,10 @@ class Grouping(unittest.TestCase):
         self.s = dashboard.Store()
         self.rid = 0
 
-    def feed(self, msgs, response=b"", tools=TOOLS, sid="s1", status=200, ctype="text/event-stream", system=None):
+    def feed(self, msgs, response=b"", tools=TOOLS, sid="s1", status=200, ctype="text/event-stream", system=None, extra=None):
         self.rid += 1
-        body = json.dumps({"model": "claude-x", "messages": msgs, "tools": tools, "system": system or [], "stream": True}).encode()
+        body = json.dumps({"model": "claude-x", "messages": msgs, "tools": tools, "system": system or [], "stream": True,
+                           **(extra or {})}).encode()
         self.s.handle("request", self.rid, time.time(), "POST", "/v1/messages?beta=true",
                       {"x-claude-code-session-id": sid}, len(body))
         self.s.handle("body", self.rid, body)
@@ -132,6 +133,24 @@ class Grouping(unittest.TestCase):
         self.feed([user(text("real prompt"))], reply(text("ok")))
         side, main = self.events("chat")
         self.assertEqual(side["parent"], {"chat": main["id"], "tool": None})
+
+    TITLE = {"output_config": {"format": {"type": "json_schema", "schema": {
+        "type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}}}}
+
+    def title_call(self, answer, extra=TITLE):
+        self.feed([user(text("real prompt"))], reply(text("ok")))
+        self.feed([user(text("name this chat"))], reply(text(answer)), tools=[], extra=extra)
+        return self.events("title")
+
+    def test_title_call_emits_title_for_root_chat(self):
+        titles = self.title_call('{"title":"My chat"}')
+        self.assertEqual(titles, [{"t": "title", "chat": self.events("chat")[0]["id"], "title": "My chat"}])
+
+    def test_title_call_with_bad_json_emits_nothing(self):
+        self.assertEqual(self.title_call("not json"), [])
+
+    def test_side_call_without_output_config_emits_no_title(self):
+        self.assertEqual(self.title_call('{"title":"My chat"}', extra=None), [])
 
     def test_non_streamed_reply_is_replayed_as_events(self):
         msg = {"model": "m", "content": [text("plain")], "stop_reason": "end_turn", "usage": {"output_tokens": 1}}

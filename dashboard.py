@@ -244,6 +244,11 @@ class Store:
             parent = ({"chat": waiting["chat"], "tool": waiting["id"]} if waiting
                       else {"chat": self.home(sess, sid), "tool": None})
             chat = self.nested(sess, sid, False, parent, "side", purpose(body), st["ts"])
+            try:  # Claude Code's title call asks for a JSON schema with a "title" property
+                if "title" in body["output_config"]["format"]["schema"]["properties"]:
+                    st["title_root"], st["title_text"] = chat["root"], ""
+            except (KeyError, TypeError):
+                pass
         else:
             # shortcut: a one-off request that has tools opens a tab, not a side call; demoting it later needs hindsight.
             chat = self.chats[self.home(sess, sid)] if not sess["top"] else self.record(sid, True)
@@ -298,6 +303,11 @@ class Store:
         t, i = d.get("type"), d.get("index")
         if t == "ping":
             return
+        if "title_text" in st:
+            if t == "content_block_delta":
+                st["title_text"] += d["delta"].get("text") or ""
+            elif t == "content_block_start":
+                st["title_text"] += d["content_block"].get("text") or ""
         if t == "content_block_start" and d["content_block"].get("type") == "tool_use":
             cb = d["content_block"]
             st["tool_uses"][i] = {"id": cb.get("id"), "input": cb.get("input") or {}, "json": ""}
@@ -334,6 +344,13 @@ class Store:
             except Exception:  # noqa: BLE001
                 pass
         self.emit(t="done", req=st["id"], ts=ts, status=status, reason=reason, error=error)
+        if "title_text" in st and not error:
+            try:
+                title = json.loads(st["title_text"])["title"]
+                if isinstance(title, str) and title.strip():
+                    self.emit(t="title", chat=st["title_root"], title=title.strip())
+            except (ValueError, KeyError, TypeError):
+                pass
 
     def raw(self, rid: int) -> dict | None:
         st = self.reqs.get(rid)
